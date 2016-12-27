@@ -1,0 +1,225 @@
+---
+title: "Tidy Data - Human Activity Recognition Using Smartphones Dataset"
+author: "Maggie Mhanna"
+date: "26/12/2016"
+output:
+  md_document:
+    variant: markdown_github
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Objectives
+
+One of the most exciting areas in all of data science right now is wearable computing - see for example this article . Companies like Fitbit, Nike, and Jawbone Up are racing to develop the most advanced algorithms to attract new users. The data linked to from the course website represent data collected from the accelerometers from the Samsung Galaxy S smartphone. A full description is available at the site where the data was obtained:
+
+http://archive.ics.uci.edu/ml/datasets/Human+Activity+Recognition+Using+Smartphones
+
+Here are the data for the project:
+
+https://d396qusza40orc.cloudfront.net/getdata%2Fprojectfiles%2FUCI%20HAR%20Dataset.zip
+
+We create one R script called run_analysis.R that does the following.
+
+- Merges the training and the test sets to create one data set.
+- Extracts only the measurements on the mean and standard deviation for each measurement.
+- Uses descriptive activity names to name the activities in the data set
+- Appropriately labels the data set with descriptive variable names.
+- From the data set in step 4, creates a second, independent tidy data set with the average of each variable for each activity and each subject.
+
+This file describes the steps performed in order to create the a Tidy data.
+
+## Required Libraries
+
+The libraries used in this project are:
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(knitr)
+```
+
+## Getting the Data
+
+### Changing Working Directory
+
+Change the value of the path depending on the working directory 
+
+```{r}
+path <- "~/Dropbox/3 Data Science Specialization/Course 3 - Getting and cleaning data/Getting_Cleaning_Data_Project"
+setwd(path)
+```
+
+### Downloading the file
+
+```{r}
+fileUrl <- "https://d396qusza40orc.cloudfront.net/getdata%2Fprojectfiles%2FUCI%20HAR%20Dataset.zip"
+download.file(fileUrl,destfile="Dataset.zip",method="curl")
+```
+
+
+### Unzip the file and create a data path
+
+```{r}
+unzip(zipfile="Dataset.zip")
+path_rf <- file.path("UCI HAR Dataset")
+```
+
+
+### Collecting Training Set
+
+```{r}
+subject_train <- read.table(file.path(path_rf, "train","subject_train.txt"))
+X_train <- read.table(file.path(path_rf, "train","X_train.txt"))
+y_train <- read.table(file.path(path_rf, "train","y_train.txt"))
+```
+
+### Collecting Testing Set
+
+```{r}
+subject_test <- read.table(file.path(path_rf, "test","subject_test.txt"))
+X_test <- read.table(file.path(path_rf, "test","X_test.txt"))
+y_test <- read.table(file.path(path_rf, "test","y_test.txt"))
+```
+
+## Merging the training and the test sets to create one data set
+
+We merge the training data and the testing data by row, and we merge the features, the subject and the activity:
+
+```{r}
+subject <- rbind(subject_train, subject_test)
+X <- rbind(X_train, X_test)
+y <- rbind(y_train, y_test)
+
+names(subject) <- "Subject"
+names(y) <- "Activity"
+
+df <- cbind(X,subject,y)
+```
+
+## Using descriptive activity names to name the activities in the data set
+
+```{r}
+activity_labels <- read.table(file.path(path_rf,"activity_labels.txt"))
+
+names(activity_labels) <- c("ActivityNum","ActivityLabel")
+
+df <- select(merge(df,activity_labels, by.x = "Activity", by.y = "ActivityNum"),-Activity, Activity = ActivityLabel)
+```
+
+## Getting feature names and attributing them to column names
+
+### Getting features names 
+
+```{r}
+features <- read.table(file.path(path_rf,"features.txt"))  
+names(features) <- c('FeatureNum','FeatureName')
+features$FeatureCode <- paste0("V",features$FeatureNum)
+```
+
+### Extracting only the measurements on the mean and standard deviation for each measurement
+
+```{r}
+df_features <- features[grep("mean\\(\\)|std\\(\\)",features$FeatureName),]
+df <- df[c(df_features$FeatureCode,"Subject","Activity")]
+```
+
+
+### Fixing feature names 
+
+```{r}
+df_features$FeatureName <- as.character(df_features$FeatureName)
+df_features$FeatureName <- gsub('([[:upper:]])', '-\\1', df_features$FeatureName)
+df_features$FeatureName <- gsub('--', '-\\1', df_features$FeatureName)
+df_features[grepl("-Mag",df_features$FeatureName),"FeatureName"] <- 
+    paste0(df_features[grepl("-Mag",df_features$FeatureName),"FeatureName"], "-Mag")
+df_features$FeatureName <- sub("-Mag","",df_features$FeatureName)
+df_features$FeatureName <- sub("-Body-Body","-Body",df_features$FeatureName)
+
+df_features[!grepl("-Jerk",df_features$FeatureName),"FeatureName"] <- sub('-mean\\(\\)','-NoJerk-mean\\(\\)',df_features[!grepl("-Jerk",df_features$FeatureName),"FeatureName"])
+df_features[!grepl("-Jerk",df_features$FeatureName),"FeatureName"] <- sub('-std\\(\\)','-NoJerk-std\\(\\)',df_features[!grepl("-Jerk",df_features$FeatureName),"FeatureName"])
+```
+
+### Attributing the Names in df_features to the column names in df
+
+```{r}
+names(df) <- c(df_features$FeatureName,"Subject","Activity")
+```
+
+## Creating Tidy Data by seperating the columns
+
+```{r}
+df <- gather(df, Description, Value, -Subject, -Activity)
+dfTidy <- separate(df, Description, c("Domain", "Acceleration", "Instrument", "Jerk", "Measure","Direction"))
+```
+
+## Appropriately labels the data set with descriptive variable names
+
+Names of features are labeled using descriptive variable names.
+
+- prefix t is replaced by time
+- Acc is replaced by Accelerometer
+- Gyro is replaced by Gyroscope
+- prefix f is replaced by frequency
+- Mag is replaced by Magnitude
+- BodyBody is replaced by Body
+
+```{r}
+dfTidy$Domain <- factor(dfTidy$Domain, labels=c("Freq","Time"))
+dfTidy$Acceleration <- factor(dfTidy$Acceleration)
+dfTidy$Instrument <- factor(dfTidy$Instrument,labels=c("Accelerometer","Gyroscope"))
+dfTidy$Jerk <- factor(dfTidy$Jerk, labels = c("Jerk",NA))
+dfTidy$Measure <- factor(dfTidy$Measure, labels = c("Mean","STD"))
+dfTidy$Direction <- factor(dfTidy$Direction, labels = c("Magnitude","X","Y","Z"))
+```
+
+## Order Tidy Data by Subject and Activity
+
+```{r}
+dfTidy <- dfTidy[order(dfTidy$Subject,dfTidy$Activity),]
+rownames(dfTidy) <- NULL
+```
+
+## Creating a second, independent tidy data set with the average of each variable for each activity and each subject.
+
+```{r}
+dfSummary <- summarise(group_by(dfTidy,Subject,Activity), mean(Value))
+```
+
+## Exporting Data Tables
+
+```{r}
+write.table(dfTidy, "dfTidy.txt", row.names = FALSE)
+write.table(dfSummary, "dfSummary.txt", row.names = FALSE)
+```
+
+### Displaying Tidy Data and its summary
+
+```{r set-options}
+options(width = 160)
+
+kable(dfTidy[1:20,])
+
+kable(dfSummary[1:20,])
+```
+
+### Checking the structures of the data frame
+
+```{r}
+str(dfTidy)
+
+str(dfSummary)
+```
+
+## Data and Variables Description
+
+```{r VariablesDescription, echo=FALSE}
+
+VariablesDescription <- data.frame(Variable = names(dfTidy), Description = c("The subject who performed the activity for each window sample","The activity being performed (WALKING, WALKING_UPSTAIRS, ...)","Indicates whether the measure is a time domain or a frequency domain signal","The acceleration signal is separated into body and gravity acceleration signals","The instrument (accelerometer or gyroscope) used to measure the signal","Indicates whether the signal is a Jerk signal or not","The set of variables estimated from these signals","Indicates whether the measured signal is an axial signal (X,Y,Z) or a magnitude signal","Value of the signal"))
+
+VariablesDescription$Description <- as.character(VariablesDescription$Description)
+kable(VariablesDescription)
+```
+
